@@ -24,11 +24,11 @@ using namespace std;
 mt19937 rng((uint32_t)chrono::steady_clock::now().time_since_epoch().count());
 int uniform(int l, int r) { return uniform_int_distribution<int>(l, r)(rng); }
 
-const int N = 64; 
+const int N = 40; 
 const int qnt_itens = 400; 
-const int qnt_formigas = 100; 
-const int raio_visao = 3; 
-const int num_iteracoes = 10000000; 
+const int qnt_formigas = 50; 
+const int raio_visao = 1; 
+const int num_iteracoes = 500000; 
 const int num_iteracoes_print = 1000; 
 
 struct formiga {
@@ -169,7 +169,7 @@ void draw_grid() {
                 attroff(COLOR_PAIR(2));
             } else {
                 attron(COLOR_PAIR(1));
-                mvprintw(i, j * 2, ". ");
+                mvprintw(i, j * 2, "  ");
                 attroff(COLOR_PAIR(1));
             }
         }
