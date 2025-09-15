@@ -1,3 +1,5 @@
+// to run: g++ -std=c++20 -lncurses simulacao.cpp && ./a.out
+
 #include <algorithm>
 #include <array>
 #include <bitset>
