@@ -29,7 +29,7 @@ int uniform(int l, int r) { return uniform_int_distribution<int>(l, r)(rng); }
 const int N = 40; 
 const int qnt_itens = 400; 
 const int qnt_formigas = 50; 
-const int raio_visao = 1; 
+const int raio_visao = 1; // tem que ser <= N
 const int num_iteracoes = 500000; 
 const int num_iteracoes_print = 1000; 
 
@@ -66,18 +66,18 @@ void iniciar_formigas() {
     formigas.assign(qnt_formigas, formiga()); 
 } 
 
-bool verificar_bound(int i, int j) {
-    return i >= 0 && j >= 0 && i < N && j < N; 
-}
+pair<int, int> get_move(int i, int j) {
+    i = (i + N) % N; 
+    j = (j + N) % N; 
+    return make_pair(i, j); 
+} 
 
 void deslocar_formiga(int idx) {
     vector<pair<int, int>> dir; 
     for (int ii = -1; ii <= 1; ii++) {
         for (int jj = -1; jj <= 1; jj++) {
             if (abs(ii) + abs(jj) == 1) {
-                if (verificar_bound(formigas[idx].i + ii, formigas[idx].j + jj)) {
-                    dir.emplace_back(ii, jj); 
-                } 
+                dir.emplace_back(ii, jj); 
             } 
         } 
     } 
@@ -85,6 +85,7 @@ void deslocar_formiga(int idx) {
     auto [ii, jj] = dir[d]; 
     formigas[idx].i += ii; 
     formigas[idx].j += jj; 
+    tie(formigas[idx].i, formigas[idx].j) = get_move(formigas[idx].i, formigas[idx].j); 
 } 
 
 void pegar_ou_largar(int idx, bool after = 0) {
@@ -95,10 +96,9 @@ void pegar_ou_largar(int idx, bool after = 0) {
 
     for (int ii = -raio_visao; ii <= raio_visao; ii++) {
         for (int jj = -raio_visao; jj <= raio_visao; jj++) {
-            if (verificar_bound(f.i + ii, f.j + jj)) {
-                livres++; 
-                com_itens += grid[f.i + ii][f.j + jj]; 
-            } 
+            auto [ni, nj] = get_move(f.i + ii, f.j + jj); 
+            livres++; 
+            com_itens += grid[ni][nj]; 
         } 
     } 
 
