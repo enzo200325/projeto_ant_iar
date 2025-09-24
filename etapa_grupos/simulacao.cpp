@@ -29,20 +29,20 @@ mt19937 rng((uint32_t)chrono::steady_clock::now().time_since_epoch().count());
 int uniform(int l, int r) { return uniform_int_distribution<int>(l, r)(rng); }
 uniform_real_distribution<double> urd(0.0, 1.0); 
 
-const int N = 64; 
-const int qnt_itens = 400; 
-const int qnt_formigas = 100; 
-const int raio_visao = 1; // tem que ser <= N
-const int num_iteracoes = 1e7; 
-//const int num_iteracoes = 1; 
-const int num_iteracoes_print = 10000; 
+int N = 64; 
+int qnt_itens = 400; 
+int qnt_formigas = 100; 
+int raio_visao = 1; // tem que ser <= N
+int num_iteracoes = 2e6; 
+int num_iteracoes_print = 10000; 
 
-const double alpha = 11.8029; 
-const double k1 = 0.3;
-const double k2 = 0.6;
+double alpha = 0.30; 
+double k1 = 0.5;
+double k2 = 0.025; 
 
-const string dados_file = "dados15.txt"; 
-const bool normalize = 0; 
+bool normalize = 1;
+
+const string dados_file = "dados2.txt"; 
 
 struct dado {
     double x, y; 
@@ -82,6 +82,7 @@ vector<formiga> formigas;
 void iniciar_grid() {
     grid.assign(N, vector<dado>(N));
     tem_formiga.assign(N, vector<int>(N, -1)); 
+    posicoes_livres.clear(); 
     for (int i = 0; i < N; i++) for (int j = 0; j < N; j++) posicoes_livres.emplace_back(i, j); 
     // nao pode haver mais de um item no mesmo lugar
     vector<int> ord(N * N); 
@@ -134,6 +135,7 @@ void iniciar_grid() {
 } 
 
 void iniciar_formigas() {
+    formigas.clear(); 
     for (int i = 0; i < qnt_formigas; i++) formigas.emplace_back(formiga(i)); 
 } 
 
@@ -186,8 +188,6 @@ double get_similarity(int i, int j, dado d) {
         } 
     } 
 
-    //cout << "sum: " << sum << " | s: " << s << endl;
-
     return max(0.0, sum / (s * s)); 
 } 
 
@@ -208,27 +208,25 @@ void pegar_ou_largar(int idx, bool after = 0) {
     formiga& f = formigas[idx]; 
 
     if (!f.carregando.active && !after) { 
-        // posso pegar
-        if (check_prob(prob_pick(get_similarity(f.i, f.j, grid[f.i][f.j])))) {
+        if (grid[f.i][f.j].active && check_prob(prob_pick(get_similarity(f.i, f.j, grid[f.i][f.j])))) {
+            if (abs(grid[f.i][f.j].x) <= 1e-100) {
+                cout << "what: " << grid[f.i][f.j].x << endl;
+            } 
             f.carregando = grid[f.i][f.j]; 
             grid[f.i][f.j].active = 0; 
         } 
     } 
     else {
         if (f.carregando.active && !grid[f.i][f.j].active) {
-            //cout << "what" << endl;
-            //cout << "similarity: " << get_similarity(f.i, f.j, f.carregando) << endl;
-            //cout << "prob_drop: " << prob_drop(get_similarity(f.i, f.j, f.carregando)) << endl;
             if (check_prob(prob_drop(get_similarity(f.i, f.j, f.carregando)))) {
-                //cout << "damn" << endl;
                 grid[f.i][f.j] = f.carregando; 
                 f.carregando.active = 0; 
+
+                if (after) tem_formiga[f.i][f.j] = -1; 
             } 
         } 
     } 
 } 
-
-vector<array<int, 3>> colors; 
 
 void init_ncurses() {
     initscr();            // Inicia modo ncurses
@@ -237,15 +235,11 @@ void init_ncurses() {
     start_color();        // Habilita cores
                           
     init_pair(0, COLOR_WHITE, COLOR_BLACK); 
-    // Para item ou formiga carregando item (maximo de itens 50); 
+    // Para item ou formiga carregando item  
     int it = 1; 
     for (int i = 1; i < 16; i++) {
         init_pair(it++, i, COLOR_BLACK); 
     } 
-    //init_pair(1, COLOR_GREEN, COLOR_BLACK);  
-    //init_pair(2, COLOR_RED, COLOR_BLACK);  
-    //init_pair(3, COLOR_YELLOW, COLOR_BLACK); 
-    //init_pair(4, COLOR_BLUE, COLOR_BLACK); 
 }
 
 // Mostra grid na tela
@@ -271,7 +265,7 @@ void draw_grid() {
     refresh();
 }
 
-int main() {
+void run_on_constants_and_show() {
     init_ncurses(); 
 
     iniciar_grid(); 
@@ -290,26 +284,24 @@ int main() {
 
     } 
 
-
     for (int it = num_iteracoes;;it++) {
         if (it == (int)num_iteracoes + 1e6) break; 
         int idx = it % qnt_formigas; 
         bool ninguem_carregando = 1; 
+
         for (formiga f : formigas) {
-            //cout << "hm: " << f.carregando.active << endl;
-            ninguem_carregando &= !f.carregando.active;
-        } 
-
-        if (ninguem_carregando) break; 
-        else {
-            deslocar_formiga(idx); 
-            pegar_ou_largar(idx, 1); 
-        } 
-
-            if (it%num_iteracoes_print == 0) {
-                draw_grid();
-                std::this_thread::sleep_for(std::chrono::milliseconds(10)); // pausa 300ms
+            if (f.carregando.active) {
+                ninguem_carregando = 0; 
+                deslocar_formiga(f.id); 
+                pegar_ou_largar(f.id, 1); 
             } 
+        } 
+
+        if (it%num_iteracoes_print == 0) {
+            draw_grid();
+            std::this_thread::sleep_for(std::chrono::milliseconds(10)); // pausa 300ms
+        } 
+        if (ninguem_carregando) break; 
     }
 
     auto grid_final = grid; 
@@ -328,14 +320,110 @@ int main() {
     //std::this_thread::sleep_for(std::chrono::milliseconds(5000)); // pausa 300ms
                                                                   //
 
-    int cnt = 0; 
-    for (int i = 0; i < N; i++) {
-        for (int j = 0; j < N; j++) {
-            cnt += grid[i][j].active; 
-        } 
-    } 
     getch();    // Espera tecla
     endwin();   // Sai do modo ncurses
-    cout << "cnt: " << cnt << endl;
-
 } 
+
+void run_on_constants() {
+    iniciar_grid(); 
+    iniciar_formigas(); 
+
+    auto grid_inicial = grid; 
+    for (int it = 0; it < num_iteracoes; it++) {
+        int idx = it % qnt_formigas; 
+        deslocar_formiga(idx); 
+        pegar_ou_largar(idx); 
+    } 
+
+    for (int it = num_iteracoes;;it++) {
+        if (it == (int)num_iteracoes * 2) break; 
+        int idx = it % qnt_formigas; 
+        bool ninguem_carregando = 1; 
+
+        int cnt = 0; 
+        for (formiga f : formigas) {
+            if (f.carregando.active) {
+                cout << "coords: " << f.i << " | " << f.j << " | color: " << f.carregando.actual_group << endl;
+                cout << "coords item: " << f.carregando.x << " | " << f.carregando.y << endl;
+                ninguem_carregando = 0; 
+                cnt++; 
+            } 
+        } 
+
+        cout << "cnt: " << cnt << endl;
+
+        if (ninguem_carregando) break; 
+        deslocar_formiga(idx); 
+        pegar_ou_largar(idx, 1); 
+    }
+
+    auto grid_final = grid; 
+} 
+
+vector<vector<dado>> run(double _alpha, double _k1, double _k2, bool _normalize) {
+    double back_alpha = alpha; 
+    double back_k1 = k1; 
+    double back_k2 = k2; 
+    alpha = _alpha; 
+    k1 = _k1; 
+    k2 = _k2; 
+
+    iniciar_grid(); 
+    iniciar_formigas(); 
+
+    auto grid_inicial = grid; 
+    for (int it = 0; it < num_iteracoes; it++) {
+        int idx = it % qnt_formigas; 
+        deslocar_formiga(idx); 
+        pegar_ou_largar(idx); 
+    } 
+
+
+    for (int it = num_iteracoes;;it++) {
+        if (it == (int)num_iteracoes + 1e7) break; 
+        int idx = it % qnt_formigas; 
+        bool ninguem_carregando = 1; 
+        for (formiga f : formigas) {
+            if (f.carregando.active) {
+                ninguem_carregando = 0; 
+                deslocar_formiga(f.id); 
+                pegar_ou_largar(f.id, 1); 
+            } 
+        } 
+        if (ninguem_carregando) break; 
+    }
+
+    auto grid_final = grid; 
+    alpha = back_alpha; 
+    k1 = back_k1; 
+    k2 = back_k2; 
+    return grid_final; 
+} 
+
+double check_max_dist(vector<vector<dado>> grid) {
+    map<int, vector<pair<int, int>>> mapa; 
+    for (int i = 0; i < N; i++) {
+        for (int j = 0; j < N; j++) {
+            if (grid[i][j].active) {
+                mapa[grid[i][j].actual_group].emplace_back(i, j); 
+            } 
+        } 
+    } 
+
+    for (auto [c, V] : mapa) {
+        for (auto [x1, y1] : V) {
+            for (auto [x2, y2] : V) {
+                double dx = x1 - x2; 
+                double dy = y1 - y2; 
+
+            } 
+        } 
+    } 
+
+    return -12; 
+} 
+
+int main() {
+    run_on_constants(); 
+} 
+
