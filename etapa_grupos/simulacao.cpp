@@ -31,20 +31,46 @@ uniform_real_distribution<double> urd(0.0, 1.0);
 
 int N = 64; 
 int qnt_itens = 400; 
-int qnt_formigas = 100; 
-int raio_visao = 1; // tem que ser <= N
-int num_iteracoes = 2e6; 
+int qnt_formigas = 150; 
+int num_iteracoes = 1e7; 
 int num_iteracoes_print = 10000; 
 
-double alpha = 0.30; 
-double k1 = 0.5;
-double k2 = 0.025; 
+/* para 15 talvez
+double alpha_start = 0.10, alpha_end = 0.02; 
+double k1_start = 0.19, k1_end = 0.02;
+double k2_start = 0.0105, k2_end = 0.005; 
+*/  
+
+int raio_visao; // tem que ser <= N
+int raio_visao_start = 2, raio_visao_end = 2; 
+
+const bool EXP = 1; 
+double alpha_start = 1.00, alpha_end = 0.10; 
+double k1_start = 0.60, k1_end = 0.05; 
+double k2_start = 0.050, k2_end = 0.005; 
+
+double alpha, k1, k2; 
 
 bool normalize = 1;
 
 const string dados_file = "dados2.txt"; 
 
 const double inf = 1e99; 
+
+double schedule(double start, double end, int t, int T) {
+    double frac = (double)t / T;
+    return start + frac * (end - start);
+}
+double exp_decay(double start, double end, int t, int T) {
+    double frac = (double)t / T;
+    return start * pow(end/start, frac);
+}
+
+int schedule_int(int start, int end, int t, int T) {
+    double frac = (double)t / T;
+    double val = start + frac * (end - start);
+    return (int)round(val);
+}
 
 struct dado {
     double x, y; 
@@ -179,7 +205,7 @@ double get_dist(dado d0, dado d1) {
 } 
 
 double get_similarity(int i, int j, dado d) {
-    double s = 1; 
+    //double s = 0; 
     double sum = 0; 
     for (int ii = -raio_visao; ii <= raio_visao; ii++) {
         for (int jj = -raio_visao; jj <= raio_visao; jj++) {
@@ -188,13 +214,15 @@ double get_similarity(int i, int j, dado d) {
             auto [ni, nj] = get_move(i + ii, j + jj); 
 
             if (grid[ni][nj].active) {
-                s++; 
-                sum += 1 - (get_dist(d, grid[ni][nj]) / alpha); 
+                //s++; 
+                sum += max(0.0, 1 - (get_dist(d, grid[ni][nj]) / alpha)); 
             } 
         } 
     } 
-
-    return max(0.0, sum / (s * s)); 
+    //if (s == 0) return 0; 
+    
+    double S = raio_visao * raio_visao; 
+    return max(0.0, sum / (S * S)); 
 } 
 
 double prob_pick(double similarity) {
@@ -202,8 +230,12 @@ double prob_pick(double similarity) {
     return val * val; 
 } 
 double prob_drop(double similarity) {
-    double val = (similarity / (k2 + similarity)); 
-    return val * val; 
+    //double val = (similarity / (k2 + similarity)); 
+    //return val * val * val; 
+
+    // machado: 
+    if (similarity < k2) return 2*similarity; 
+    else return 1; 
 } 
 double check_prob(double prob) {
     double res = urd(rng); 
@@ -215,10 +247,6 @@ void pegar_ou_largar(int idx, bool after = 0) {
 
     if (!f.carregando.active && !after) { 
         if (grid[f.i][f.j].active && check_prob(prob_pick(get_similarity(f.i, f.j, grid[f.i][f.j])))) {
-            if (abs(grid[f.i][f.j].x) <= 1e-100) {
-                //assert(false); 
-                //cout << "what: " << grid[f.i][f.j].x << endl;
-            } 
             f.carregando = grid[f.i][f.j]; 
             grid[f.i][f.j].active = 0; 
         } 
@@ -228,7 +256,6 @@ void pegar_ou_largar(int idx, bool after = 0) {
             if (check_prob(prob_drop(get_similarity(f.i, f.j, f.carregando)))) {
                 grid[f.i][f.j] = f.carregando; 
                 f.carregando.active = 0; 
-
                 if (after) tem_formiga[f.i][f.j] = -1; 
             } 
         } 
@@ -272,6 +299,20 @@ void draw_grid() {
     refresh();
 }
 
+void calc_parameters(int t) {
+    if (EXP) {
+        k1 = exp_decay(k1_start, k1_end, t, num_iteracoes);  // from 0.6 down to 0.2
+        k2 = exp_decay(k2_start, k2_end, t, num_iteracoes); // from 0.05 down to 0.005
+        alpha = exp_decay(alpha_start, alpha_end, t, num_iteracoes); // optional
+    } 
+    else {
+        k1 = schedule(k1_start, k1_end, t, num_iteracoes);  // from 0.6 down to 0.2
+        k2 = schedule(k2_start, k2_end, t, num_iteracoes); // from 0.05 down to 0.005
+        alpha = schedule(alpha_start, alpha_end, t, num_iteracoes); // optional
+    }
+    raio_visao = schedule_int(raio_visao_start, raio_visao_end, t, num_iteracoes); 
+} 
+
 void run_on_constants_and_show() {
     init_ncurses(); 
 
@@ -280,6 +321,8 @@ void run_on_constants_and_show() {
 
     auto grid_inicial = grid; 
     for (int it = 0; it < num_iteracoes; it++) {
+        calc_parameters(it); 
+
         int idx = it % qnt_formigas; 
         deslocar_formiga(idx); 
         pegar_ou_largar(idx); 
@@ -292,6 +335,8 @@ void run_on_constants_and_show() {
     } 
 
     for (int it = num_iteracoes;;it++) {
+        calc_parameters(it); 
+
         if (it == (int)num_iteracoes + 1e6) break; 
         int idx = it % qnt_formigas; 
         bool ninguem_carregando = 1; 
@@ -436,27 +481,30 @@ double check_max_dist(vector<vector<dado>> grid) {
 int main() {
     //run_on_constants(); 
 //vector<vector<dado>> run(double _alpha, double _k1, double _k2, bool _normalize) {
-    double best_alpha, best_k1, best_k2; 
-    double best_dist = inf; 
-    for (double al = 0.001; al <= 0.1; al += 0.001) {
-        for (double kk1 = 0.01; kk1 <= 0.1; kk1 += 0.01) {
-            for (double kk2 = 0.01; kk2 <= 0.1; kk2 += 0.01) {
-                auto grid_final = run(al, kk1, kk2, 1); 
-                double cur_dist = check_max_dist(grid_final); 
-                if (cur_dist < best_dist) {
-                    best_dist = cur_dist; 
-                    best_alpha = al; 
-                    best_k1 = kk1; 
-                    best_k2 = kk2; 
-                } 
-            } 
-        } 
-        cout << "best_dist: " << best_dist << endl;
-        cout << "alpha: " << best_alpha << endl;
-        cout << "k1: " << best_k1 << endl;
-        cout << "k2: " << best_k2 << endl;
-        cout << "---------------------------------" << endl;
-    } 
+    //double best_alpha, best_k1, best_k2; 
+    //double best_dist = inf; 
+    //for (double al = 0.001; al <= 0.1; al += 0.001) {
+    //    //for (double kk1 = 0.01; kk1 <= 0.1; kk1 += 0.01) {
+    //        //for (double kk2 = 0.01; kk2 <= 0.1; kk2 += 0.01) {
+    //            int kk1 = 
+    //            auto grid_final = run(al, kk1, kk2, 1); 
+    //            double cur_dist = check_max_dist(grid_final); 
+    //            if (cur_dist < best_dist) {
+    //                best_dist = cur_dist; 
+    //                best_alpha = al; 
+    //                best_k1 = kk1; 
+    //                best_k2 = kk2; 
+    //            } 
+    //            cout << "best_dist: " << best_dist << endl;
+    //            cout << "alpha: " << best_alpha << endl;
+    //            cout << "k1: " << best_k1 << endl;
+    //            cout << "k2: " << best_k2 << endl;
+    //            cout << "---------------------------------" << endl;
+    //        //} 
+    //    //} 
+    //} 
+
+    run_on_constants_and_show(); 
 
     //cout << "best_dist: " << best_dist << endl;
     //cout << "alpha: " << best_alpha << endl;
