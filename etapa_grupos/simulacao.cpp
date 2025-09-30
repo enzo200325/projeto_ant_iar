@@ -42,12 +42,12 @@ double k2_start = 0.0105, k2_end = 0.005;
 */  
 
 int raio_visao; // tem que ser <= N
-int raio_visao_start = 2, raio_visao_end = 2; 
+int raio_visao_start = 4, raio_visao_end = 1; 
 
 const bool EXP = 1; 
-double alpha_start = 1.00, alpha_end = 0.10; 
-double k1_start = 0.60, k1_end = 0.05; 
-double k2_start = 0.050, k2_end = 0.005; 
+double alpha_start = 1.00, alpha_end = 0.50; 
+double k1_start = 0.60, k1_end = 0.60; 
+double k2_start = 0.050, k2_end = 0.050; 
 
 double alpha, k1, k2; 
 
@@ -78,7 +78,7 @@ struct dado {
 
     int actual_group; 
 
-    dado() : x(2), y(0.0), active(false) { } 
+    dado() : x(0.0), y(0.0), active(false) { } 
     dado(double _x, double _y, bool _active) : x(_x), y(_y), active(_active) { } 
 };  
 
@@ -230,12 +230,12 @@ double prob_pick(double similarity) {
     return val * val; 
 } 
 double prob_drop(double similarity) {
-    //double val = (similarity / (k2 + similarity)); 
-    //return val * val * val; 
+    double val = (similarity / (k2 + similarity)); 
+    return val * val * val; 
 
     // machado: 
-    if (similarity < k2) return 2*similarity; 
-    else return 1; 
+    //if (similarity < k2) return 2*similarity; 
+    //else return 1; 
 } 
 double check_prob(double prob) {
     double res = urd(rng); 
@@ -253,10 +253,14 @@ void pegar_ou_largar(int idx, bool after = 0) {
     } 
     else {
         if (f.carregando.active && !grid[f.i][f.j].active) {
-            if (check_prob(prob_drop(get_similarity(f.i, f.j, f.carregando)))) {
+            if (after) {
+                //tem_formiga[f.i][f.j] = -1; 
                 grid[f.i][f.j] = f.carregando; 
                 f.carregando.active = 0; 
-                if (after) tem_formiga[f.i][f.j] = -1; 
+            } 
+            else if (check_prob(prob_drop(get_similarity(f.i, f.j, f.carregando)))) {
+                grid[f.i][f.j] = f.carregando; 
+                f.carregando.active = 0; 
             } 
         } 
     } 
@@ -334,26 +338,30 @@ void run_on_constants_and_show() {
 
     } 
 
-    for (int it = num_iteracoes;;it++) {
+    for (int it = num_iteracoes;;) {
         calc_parameters(it); 
 
-        if (it == (int)num_iteracoes + 1e6) break; 
+        if (it == 3*(int)num_iteracoes) {
+            //break; 
+        } 
+
         int idx = it % qnt_formigas; 
         bool ninguem_carregando = 1; 
 
         for (formiga f : formigas) {
             if (f.carregando.active) {
                 ninguem_carregando = 0; 
-                deslocar_formiga(f.id); 
-                pegar_ou_largar(f.id, 1); 
             } 
         } 
+
+        if (ninguem_carregando) break; 
+        deslocar_formiga(idx); 
+        pegar_ou_largar(idx, 1); 
 
         if (it%num_iteracoes_print == 0) {
             draw_grid();
             std::this_thread::sleep_for(std::chrono::milliseconds(10)); // pausa 300ms
         } 
-        if (ninguem_carregando) break; 
     }
 
     auto grid_final = grid; 
