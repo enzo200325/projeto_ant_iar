@@ -1,4 +1,7 @@
-// to run: g++ -std=c++20 -lncurses simulacao.cpp && ./a.out
+// to run: 
+// g++ -std=c++20 simulacao.cpp && ./a.out
+// ffmpeg -framerate 20 -i frames/frame_%05d.ppm -vf scale=640:640 -c:v libx264 -pix_fmt yuv420p out.mp4
+// open out.mp4 
 
 #include <algorithm>
 #include <array>
@@ -21,7 +24,6 @@
 #include <thread>
 using namespace std; 
 
-#include <ncurses.h> 
 #include <fstream>
 #include <sstream>
 
@@ -33,21 +35,23 @@ int N = 64;
 int qnt_itens = 400; 
 int qnt_formigas = 150; 
 int num_iteracoes = 1e7; 
-int num_iteracoes_print = 10000; 
+int num_iteracoes_print = 100000;
 
-/* para 15 talvez
-double alpha_start = 0.10, alpha_end = 0.02; 
-double k1_start = 0.19, k1_end = 0.02;
-double k2_start = 0.0105, k2_end = 0.005; 
-*/  
 
 int raio_visao; // tem que ser <= N
-int raio_visao_start = 4, raio_visao_end = 1; 
+//int raio_visao_start = 5, raio_visao_end = 2; 
+//double alpha_start = 0.1, alpha_end = 0.005; 
+//double k1_start = 0.010, k1_end = 0.00050; 
+//double k2_start = 0.030, k2_end = 0.00010; 
 
-const bool EXP = 1; 
-double alpha_start = 1.00, alpha_end = 0.50; 
-double k1_start = 0.60, k1_end = 0.60; 
-double k2_start = 0.050, k2_end = 0.050; 
+
+// pra 4 cores
+const bool EXP = 0; 
+int raio_visao_start = 5, raio_visao_end = 2;
+double alpha_start = 1.5, alpha_end = 1.5; 
+double k1_start = 0.05, k1_end = 0.05; 
+double k2_start = 0.200, k2_end = 0.200; 
+
 
 double alpha, k1, k2; 
 
@@ -230,12 +234,12 @@ double prob_pick(double similarity) {
     return val * val; 
 } 
 double prob_drop(double similarity) {
-    double val = (similarity / (k2 + similarity)); 
-    return val * val * val; 
+    //double val = (similarity / (k2 + similarity)); 
+    //return val * val * val; 
 
     // machado: 
-    //if (similarity < k2) return 2*similarity; 
-    //else return 1; 
+    if (similarity < k2) return 2*similarity; 
+    else return 1; 
 } 
 double check_prob(double prob) {
     double res = urd(rng); 
@@ -253,7 +257,7 @@ void pegar_ou_largar(int idx, bool after = 0) {
     } 
     else {
         if (f.carregando.active && !grid[f.i][f.j].active) {
-            if (after) {
+            if (after && false) {
                 //tem_formiga[f.i][f.j] = -1; 
                 grid[f.i][f.j] = f.carregando; 
                 f.carregando.active = 0; 
@@ -265,43 +269,6 @@ void pegar_ou_largar(int idx, bool after = 0) {
         } 
     } 
 } 
-
-void init_ncurses() {
-    initscr();            // Inicia modo ncurses
-    noecho();             // Não ecoar teclas
-    curs_set(FALSE);      // Esconde cursor
-    start_color();        // Habilita cores
-                          
-    init_pair(0, COLOR_WHITE, COLOR_BLACK); 
-    // Para item ou formiga carregando item  
-    int it = 1; 
-    for (int i = 1; i < 16; i++) {
-        init_pair(it++, i, COLOR_BLACK); 
-    } 
-}
-
-// Mostra grid na tela
-void draw_grid() {
-    // Se posicao no grid tem formiga e item ao mesmo tempo, preferencia é dada à formiga 
-    clear();
-    for (int i = 0; i < N; i++) {
-        for (int j = 0; j < N; j++) {
-            if (tem_formiga[i][j] > -1) {
-                formiga f = formigas[tem_formiga[i][j]]; 
-                int color = f.carregando.active ? f.carregando.actual_group : 0; 
-                attron(COLOR_PAIR(color)); 
-                mvprintw(i, j * 2, "F ");
-                attroff(COLOR_PAIR(color));
-            } else if (grid[i][j].active) {
-                int color = grid[i][j].actual_group; 
-                attron(COLOR_PAIR(color));
-                mvprintw(i, j * 2, "o ");
-                attroff(COLOR_PAIR(color));
-            } 
-        }
-    }
-    refresh();
-}
 
 void calc_parameters(int t) {
     if (EXP) {
@@ -317,14 +284,64 @@ void calc_parameters(int t) {
     raio_visao = schedule_int(raio_visao_start, raio_visao_end, t, num_iteracoes); 
 } 
 
-void run_on_constants_and_show() {
-    init_ncurses(); 
+#include <filesystem> // C++17/20
+namespace fs = std::filesystem;
 
+struct RGB { int r,g,b; };
+
+static const vector<RGB> PALETTE = {
+    {255,0,0},    {0,255,0},    {0,0,255},    {255,255,0},
+    {255,0,255},  {0,255,255},  {128,0,0},    {0,128,0},
+    {0,0,128},    {128,128,0},  {128,0,128},  {0,128,128},
+    {192,128,64}, {64,192,128}, {200,100,0},  {100,200,50}
+};
+
+int SCALE = 10; // pixels por célula
+
+void save_ppm_frame(int frame_idx) {
+    fs::create_directories("frames");
+    char namebuf[256];
+    snprintf(namebuf, sizeof(namebuf), "frames/frame_%05d.ppm", frame_idx);
+    ofstream out(namebuf, ios::binary);
+    if (!out) return;
+
+    int W = N * SCALE;
+    int H = N * SCALE;
+
+    out << "P3\n" << W << " " << H << "\n255\n";
+
+    for (int i = 0; i < N; ++i) {
+        for (int sy = 0; sy < SCALE; ++sy) {  // repete linhas
+            for (int j = 0; j < N; ++j) {
+                int rr=0, gg=0, bb=0;
+                if (tem_formiga[i][j] > -1) {
+                    rr = 255; gg = 255; bb = 255;
+                } else if (grid[i][j].active) {
+                    int g = grid[i][j].actual_group;
+                    int idx = (g >= 0) ? (g % (int)PALETTE.size()) : 0;
+                    rr = PALETTE[idx].r;
+                    gg = PALETTE[idx].g;
+                    bb = PALETTE[idx].b;
+                }
+                for (int sx = 0; sx < SCALE; ++sx) {
+                    out << rr << " " << gg << " " << bb << " ";
+                }
+            }
+            out << "\n";
+        }
+    }
+}
+
+
+void run_on_constants_and_show() {
     iniciar_grid(); 
     iniciar_formigas(); 
 
     auto grid_inicial = grid; 
-    for (int it = 0; it < num_iteracoes; it++) {
+
+    int last_frame_id = 0; 
+    int it = 0; 
+    for (it; it < num_iteracoes; it++) {
         calc_parameters(it); 
 
         int idx = it % qnt_formigas; 
@@ -332,17 +349,20 @@ void run_on_constants_and_show() {
         pegar_ou_largar(idx); 
 
         if (it%num_iteracoes_print == 0) {
-            draw_grid();
-            std::this_thread::sleep_for(std::chrono::milliseconds(10)); // pausa 300ms
+            int frame_id = it / num_iteracoes_print; 
+            last_frame_id = frame_id; 
+            save_ppm_frame(frame_id); 
+            //std::this_thread::sleep_for(std::chrono::milliseconds(5));
         } 
 
     } 
 
-    for (int it = num_iteracoes;;) {
-        calc_parameters(it); 
+
+    for (;;it++) {
+        calc_parameters(num_iteracoes); 
 
         if (it == 3*(int)num_iteracoes) {
-            //break; 
+            break; 
         } 
 
         int idx = it % qnt_formigas; 
@@ -359,29 +379,37 @@ void run_on_constants_and_show() {
         pegar_ou_largar(idx, 1); 
 
         if (it%num_iteracoes_print == 0) {
-            draw_grid();
-            std::this_thread::sleep_for(std::chrono::milliseconds(10)); // pausa 300ms
+            int frame_id = it / num_iteracoes_print; 
+            last_frame_id = frame_id; 
+            save_ppm_frame(frame_id); 
+            //std::this_thread::sleep_for(std::chrono::milliseconds(5));
         } 
     }
 
-    auto grid_final = grid; 
-    vector<formiga> vv; 
-
-    vector<formiga> neutral; 
-
-    grid = grid_inicial; 
     tem_formiga.assign(N, vector<int>(N, -1)); 
-    draw_grid(); 
-    std::this_thread::sleep_for(std::chrono::milliseconds(5000)); // pausa 300ms
-                                                                  //
-    grid = grid_final; 
-    tem_formiga.assign(N, vector<int>(N, -1)); 
-    draw_grid(); 
-    //std::this_thread::sleep_for(std::chrono::milliseconds(5000)); // pausa 300ms
-                                                                  //
+    save_ppm_frame(last_frame_id + 1); 
 
-    getch();    // Espera tecla
-    endwin();   // Sai do modo ncurses
+    map<int, int> mapa; 
+    int tot = 0; 
+    for (int i = 0; i < N; i++) {
+        for (int j = 0; j < N; j++) {
+            if (grid[i][j].active && tem_formiga[i][j] == -1) {
+                mapa[grid[i][j].actual_group]++; 
+                tot++; 
+            } 
+        } 
+    } 
+    cout << "tot: " << tot << endl;
+    for (auto [col, F] : mapa) {
+        cout << "col: " << col << " | F: " << F << endl;
+    } 
+    for (formiga f : formigas) {
+        if (f.carregando.active) mapa[f.carregando.actual_group]++; 
+    } 
+
+    for (auto [col, F] : mapa) {
+        //assert(F == 100); 
+    } 
 } 
 
 void run_on_constants() {
