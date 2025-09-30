@@ -27,6 +27,51 @@ using namespace std;
 #include <fstream>
 #include <sstream>
 
+// Configurações passadas via Makefile com -D flags
+#ifndef DADOS_FILE
+#define DADOS_FILE "dados_4_grupos.txt"
+#endif
+
+#ifndef EXP_DECAY
+#define EXP_DECAY 0
+#endif
+
+#ifndef RAIO_VISAO_START
+#define RAIO_VISAO_START 5
+#endif
+
+#ifndef RAIO_VISAO_END
+#define RAIO_VISAO_END 2
+#endif
+
+#ifndef ALPHA_START
+#define ALPHA_START 1.5
+#endif
+
+#ifndef ALPHA_END
+#define ALPHA_END 1.5
+#endif
+
+#ifndef K1_START
+#define K1_START 0.05
+#endif
+
+#ifndef K1_END
+#define K1_END 0.05
+#endif
+
+#ifndef K2_START
+#define K2_START 0.200
+#endif
+
+#ifndef K2_END
+#define K2_END 0.200
+#endif
+
+#ifndef NORMALIZE
+#define NORMALIZE 1
+#endif
+
 mt19937 rng((uint32_t)chrono::steady_clock::now().time_since_epoch().count());
 int uniform(int l, int r) { return uniform_int_distribution<int>(l, r)(rng); }
 uniform_real_distribution<double> urd(0.0, 1.0); 
@@ -37,27 +82,21 @@ int qnt_formigas = 150;
 int num_iteracoes = 1e7; 
 int num_iteracoes_print = 100000;
 
+const bool EXP = EXP_DECAY;
+int raio_visao_start = RAIO_VISAO_START;
+int raio_visao_end = RAIO_VISAO_END;
+double alpha_start = ALPHA_START;
+double alpha_end = ALPHA_END;
+double k1_start = K1_START;
+double k1_end = K1_END;
+double k2_start = K2_START;
+double k2_end = K2_END;
 
-int raio_visao; // tem que ser <= N
-//int raio_visao_start = 5, raio_visao_end = 2; 
-//double alpha_start = 0.1, alpha_end = 0.005; 
-//double k1_start = 0.010, k1_end = 0.00050; 
-//double k2_start = 0.030, k2_end = 0.00010; 
-
-
-// pra 4 cores
-const bool EXP = 0; 
-int raio_visao_start = 5, raio_visao_end = 2;
-double alpha_start = 1.5, alpha_end = 1.5; 
-double k1_start = 0.05, k1_end = 0.05; 
-double k2_start = 0.200, k2_end = 0.200; 
-
-
+int raio_visao;
 double alpha, k1, k2; 
 
-bool normalize = 1;
-
-const string dados_file = "dados2.txt"; 
+bool normalize = NORMALIZE;
+const string dados_file = DADOS_FILE; 
 
 const double inf = 1e99; 
 

@@ -1,0 +1,27 @@
+# Compiled executables
+*.out
+a.out
+simulacao
+*/simulacao
+
+# Generated frames and videos
+frames/
+etapa_grupos/frames/
+*.mp4
+*.avi
+
+# Object files and libraries
+*.o
+*.a
+*.so
+*.dylib
+
+# MacOS files
+.DS_Store
+
+# Editor files
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
