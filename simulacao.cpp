@@ -1,4 +1,7 @@
-// to run: g++ -std=c++20 -lncurses simulacao.cpp && ./a.out
+// to run: 
+// g++ -std=c++20 simulacao.cpp && ./a.out
+// ffmpeg -framerate 20 -i frames/frame_%05d.ppm -vf scale=640:640 -c:v libx264 -pix_fmt yuv420p out.mp4
+// open out.mp4
 
 #include <algorithm>
 #include <array>
@@ -21,7 +24,9 @@
 #include <thread>
 using namespace std; 
 
-#include <ncurses.h> 
+#include <fstream>
+#include <filesystem>
+namespace fs = std::filesystem; 
 
 mt19937 rng((uint32_t)chrono::steady_clock::now().time_since_epoch().count());
 int uniform(int l, int r) { return uniform_int_distribution<int>(l, r)(rng); }
@@ -125,124 +130,110 @@ void pegar_ou_largar(int idx, bool after = 0) {
     } 
 } 
 
+struct RGB { int r,g,b; };
 
-void init_ncurses() {
-    initscr();            // Inicia modo ncurses
-    noecho();             // Não ecoar teclas
-    curs_set(FALSE);      // Esconde cursor
-    start_color();        // Habilita cores
-    init_pair(1, COLOR_WHITE, COLOR_BLACK);  // padrão
-    init_pair(2, COLOR_GREEN, COLOR_BLACK);  // item
-    init_pair(3, COLOR_RED, COLOR_BLACK);    // formiga sem item
-    init_pair(4, COLOR_YELLOW, COLOR_BLACK); // formiga carregando
-}
+int SCALE = 10; // pixels por célula
 
-// Mostra grid na tela
-void draw_grid() {
-    clear();
-    for (int i = 0; i < N; i++) {
-        for (int j = 0; j < N; j++) {
-            bool temItem = grid[i][j];
-            int idx_formiga = -1;
-            int idx_formiga_carregando = -1; 
-            for (int idx = 0; idx < (int)formigas.size(); idx++) {
-                if (formigas[idx].i == i && formigas[idx].j == j) {
-                    if (formigas[idx].carregando) idx_formiga_carregando = idx; 
-                    idx_formiga = idx;
+void save_ppm_frame(int frame_idx) {
+    fs::create_directories("frames");
+    char namebuf[256];
+    snprintf(namebuf, sizeof(namebuf), "frames/frame_%05d.ppm", frame_idx);
+    ofstream out(namebuf, ios::binary);
+    if (!out) return;
+
+    int W = N * SCALE;
+    int H = N * SCALE;
+
+    out << "P3\n" << W << " " << H << "\n255\n";
+
+    for (int i = 0; i < N; ++i) {
+        for (int sy = 0; sy < SCALE; ++sy) {  // repete linhas
+            for (int j = 0; j < N; ++j) {
+                int rr=0, gg=0, bb=0;
+                
+                // Verifica se tem formiga na posição
+                bool tem_formiga = false;
+                for (int idx = 0; idx < (int)formigas.size(); idx++) {
+                    if (formigas[idx].i == i && formigas[idx].j == j) {
+                        tem_formiga = true;
+                        break;
+                    }
+                }
+                
+                if (tem_formiga) {
+                    // Formiga = branco (sempre)
+                    rr = 255; gg = 255; bb = 255;
+                } else if (grid[i][j]) {
+                    // Item = verde suave
+                    rr = 34; gg = 139; bb = 34;  // Forest Green
+                }
+                // Caso contrário, fica preto (rr=0, gg=0, bb=0)
+                
+                for (int sx = 0; sx < SCALE; ++sx) {
+                    out << rr << " " << gg << " " << bb << " ";
                 }
             }
-
-            // formiga carregando
-            // formiga nao carregando 
-            // iten
-
-            if (idx_formiga_carregando != -1) {
-                attron(COLOR_PAIR(4)); 
-                mvprintw(i, j * 2, "F ");
-                attroff(COLOR_PAIR(4));
-            } 
-            else if (idx_formiga != -1) {
-                attron(COLOR_PAIR(3));
-                mvprintw(i, j * 2, "F ");
-                attroff(COLOR_PAIR(3));
-            } else if (temItem) {
-                attron(COLOR_PAIR(2));
-                mvprintw(i, j * 2, "o ");
-                attroff(COLOR_PAIR(2));
-            } else {
-                attron(COLOR_PAIR(1));
-                mvprintw(i, j * 2, "  ");
-                attroff(COLOR_PAIR(1));
-            }
+            out << "\n";
         }
     }
-    refresh();
 }
 
+
 int main() {
-    init_ncurses(); 
-
-
     iniciar_grid(); 
     iniciar_formigas(); 
 
     auto grid_inicial = grid; 
-    for (int it = 0; it < num_iteracoes; it++) {
+    
+    int last_frame_id = 0;
+    int it = 0;
+    
+    // Primeira fase: iterações principais
+    for (it = 0; it < num_iteracoes; it++) {
         int idx = it % qnt_formigas; 
         deslocar_formiga(idx); 
         pegar_ou_largar(idx); 
 
-        if (it%num_iteracoes_print == 0) {
-            draw_grid();
-            std::this_thread::sleep_for(std::chrono::milliseconds(10)); // pausa 300ms
+        if (it % num_iteracoes_print == 0) {
+            int frame_id = it / num_iteracoes_print; 
+            last_frame_id = frame_id; 
+            save_ppm_frame(frame_id);
         } 
-
-        //cout << "what" << endl;
-
     } 
 
-
-    for (int it = num_iteracoes;;it++) {
+    // Segunda fase: até todas as formigas largarem os itens
+    for (;;it++) {
         if (it == (int)2e9) break; 
         int idx = it % qnt_formigas; 
         bool ninguem_carregando = 1; 
+        
         for (formiga f : formigas) {
             ninguem_carregando &= !f.carregando;
         } 
 
         if (ninguem_carregando) break; 
-        else {
-            deslocar_formiga(idx); 
-            pegar_ou_largar(idx, 1); 
-        } 
+        
+        deslocar_formiga(idx); 
+        pegar_ou_largar(idx, 1); 
 
-            if (it%num_iteracoes_print == 0) {
-                draw_grid();
-                std::this_thread::sleep_for(std::chrono::milliseconds(10)); // pausa 300ms
-            } 
+        if (it % num_iteracoes_print == 0) {
+            int frame_id = it / num_iteracoes_print; 
+            last_frame_id = frame_id; 
+            save_ppm_frame(frame_id);
+        } 
     }
 
-    auto grid_final = grid; 
-    vector<formiga> vv; 
-
-    grid = grid_inicial; 
-    formigas = vv; 
-    draw_grid(); 
-    std::this_thread::sleep_for(std::chrono::milliseconds(5000)); // pausa 300ms
-                                                                  //
-    grid = grid_final; 
-    draw_grid(); 
-    //std::this_thread::sleep_for(std::chrono::milliseconds(5000)); // pausa 300ms
-                                                                  //
-
+    // Frame final sem formigas
+    auto grid_final = grid;
+    vector<formiga> temp_formigas = formigas;
+    formigas.clear();
+    save_ppm_frame(last_frame_id + 1);
+    formigas = temp_formigas;
+    
     int cnt = 0; 
     for (int i = 0; i < N; i++) {
         for (int j = 0; j < N; j++) {
             cnt += grid[i][j]; 
         } 
     } 
-    getch();    // Espera tecla
-    endwin();   // Sai do modo ncurses
-    cout << "cnt: " << cnt << endl;
-
 } 
